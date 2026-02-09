@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ff5252">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/icons/icon-192.png">
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles/style.css">
+  <title>Settings</title>
+</head>
+<body>
+  <header>
+    <nav aria-label="Main navigation">
+      <a href="/" class="nav-link" aria-label="Record">🎙️</a>
+      <a href="/history.html" class="nav-link" aria-label="History">📚</a>
+      <a href="/kids.html" class="nav-link" aria-label="Kids">👧</a>
+      <a href="/settings.html" class="nav-link active" aria-label="Settings">⚙️</a>
+    </nav>
+    <div id="offlineBanner" class="offline-banner hidden" role="alert">
+      📴 You're offline — upload unavailable
+    </div>
+  </header>
+
+  <main>
+    <!-- PIN gate -->
+    <div id="pinGate">
+      <h1>🔒 Grown-Ups Only</h1>
+      <p>Enter the parent PIN to continue</p>
+      <div class="card">
+        <label for="pinInput">PIN</label>
+        <input type="password" id="pinInput" placeholder="Enter PIN" maxlength="10"
+               inputmode="numeric" autocomplete="off">
+        <button id="pinSubmit" class="action-button">Unlock</button>
+        <p id="pinError" class="error-text hidden">Incorrect PIN. Try again.</p>
+      </div>
+    </div>
+
+    <!-- Settings (hidden until PIN verified) -->
+    <div id="settingsPanel" class="hidden">
+      <h1>⚙️ Settings</h1>
+
+      <div class="card">
+        <h2>☁️ Upload to OneDrive</h2>
+        <p>Save all stories to your Microsoft OneDrive account.</p>
+        <button id="uploadBtn" class="action-button">📤 Upload All Stories</button>
+        <p id="uploadStatus" class="status-text"></p>
+      </div>
+
+      <div class="card">
+        <h2>📊 Storage Info</h2>
+        <p id="storageInfo">Checking…</p>
+      </div>
+
+      <div class="card">
+        <h2>🗑️ Danger Zone</h2>
+        <button id="clearBtn" class="action-button danger">Delete All Stories</button>
+      </div>
+    </div>
+
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+    <div id="spinner" class="spinner hidden" aria-label="Loading"></div>
+  </main>
+
+  <script type="module">
+    import { showToast, updateOnlineStatus } from '/scripts/app.js';
+    import { getStories, clearAllStories } from '/scripts/storage.js';
+
+    const pinGate = document.getElementById('pinGate');
+    const settingsPanel = document.getElementById('settingsPanel');
+    const pinInput = document.getElementById('pinInput');
+    const pinError = document.getElementById('pinError');
+
+    // Check if already authenticated this session
+    if (sessionStorage.getItem('parentAuth') === 'true') {
+      pinGate.classList.add('hidden');
+      settingsPanel.classList.remove('hidden');
+      loadSettings();
+    }
+
+    // Server-side PIN verification (never send plaintext PIN to client)
+    document.getElementById('pinSubmit').addEventListener('click', async () => {
+      const pin = pinInput.value;
+      if (!pin) return;
+
+      try {
+        const res = await fetch('/api/verify-pin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin }),
+        });
+        const data = await res.json();
+
+        if (data.valid) {
+          sessionStorage.setItem('parentAuth', 'true');
+          pinGate.classList.add('hidden');
+          settingsPanel.classList.remove('hidden');
+          pinError.classList.add('hidden');
+          loadSettings();
+        } else {
+          pinError.classList.remove('hidden');
+          pinInput.value = '';
+          pinInput.focus();
+        }
+      } catch {
+        // Offline fallback — allow access if previously authenticated
+        showToast('Cannot verify PIN offline', 'error');
+      }
+    });
+
+    // Enter key submits PIN
+    pinInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') document.getElementById('pinSubmit').click();
+    });
+
+    async function loadSettings() {
+      const stories = await getStories();
+      const totalSize = stories.reduce((sum, s) => {
+        let size = (s.text || '').length;
+        if (s.audioBlob) size += s.audioBlob.size;
+        return sum + size;
+      }, 0);
+      const sizeMB = (totalSize / (1024 * 1024)).toFixed(2);
+      document.getElementById('storageInfo').textContent =
+        `${stories.length} stories stored (≈ ${sizeMB} MB)`;
+    }
+
+    // OneDrive Upload
+    document.getElementById('uploadBtn').addEventListener('click', async () => {
+      if (!navigator.onLine) {
+        showToast('Upload requires internet connection', 'error');
+        return;
+      }
+
+      try {
+        // Dynamically load MSAL
+        if (!window.msal) {
+          await loadScript('https://alcdn.msauth.net/browser/3.6.0/js/msal-browser.min.js');
+        }
+
+        const msalConfig = {
+          auth: {
+            clientId: 'YOUR_CLIENT_ID', // Replace with your App Registration client ID
+            redirectUri: window.location.origin + '/settings.html',
+          },
+        };
+        const msalInstance = new msal.PublicClientApplication(msalConfig);
+        await msalInstance.initialize();
+
+        const loginResponse = await msalInstance.loginPopup({
+          scopes: ['Files.ReadWrite'],
+        });
+        const tokenResponse = await msalInstance.acquireTokenSilent({
+          account: loginResponse.account,
+          scopes: ['Files.ReadWrite'],
+        });
+
+        const stories = await getStories();
+        const statusEl = document.getElementById('uploadStatus');
+        let uploaded = 0;
+
+        for (const story of stories) {
+          const safeName = (story.title || 'untitled').replace(/[^a-zA-Z0-9 ]/g, '').slice(0, 50);
+          const timestamp = new Date(story.createdAt).toISOString().slice(0, 10);
+          const prefix = `Stories/${story.kidId || 'default'}/${timestamp}-${safeName}`;
+
+          // Upload text
+          if (story.text) {
+            await fetch(`https://graph.microsoft.com/v1.0/me/drive/root:/${prefix}.txt:/content`, {
+              method: 'PUT',
+              headers: { Authorization: `Bearer ${tokenResponse.accessToken}` },
+              body: new Blob([story.text], { type: 'text/plain' }),
+            });
+          }
+
+          // Upload audio
+          if (story.audioBlob) {
+            await fetch(`https://graph.microsoft.com/v1.0/me/drive/root:/${prefix}.webm:/content`, {
+              method: 'PUT',
+              headers: { Authorization: `Bearer ${tokenResponse.accessToken}` },
+              body: story.audioBlob,
+            });
+          }
+
+          uploaded++;
+          statusEl.textContent = `Uploaded ${uploaded} of ${stories.length}…`;
+        }
+
+        statusEl.textContent = `✅ All ${stories.length} stories uploaded!`;
+        showToast('Upload complete! 🎉');
+      } catch (err) {
+        showToast('Upload failed: ' + err.message, 'error');
+      }
+    });
+
+    // Clear all
+    document.getElementById('clearBtn').addEventListener('click', async () => {
+      if (confirm('Are you sure? This will delete ALL stories permanently.')) {
+        await clearAllStories();
+        showToast('All stories deleted');
+        loadSettings();
+      }
+    });
+
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+
+    updateOnlineStatus();
+  </script>
+</body>
+</html>

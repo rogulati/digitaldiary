@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ff5252">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/icons/icon-192.png">
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles/style.css">
+  <title>Select Kid</title>
+</head>
+<body>
+  <header>
+    <nav aria-label="Main navigation">
+      <a href="/" class="nav-link" aria-label="Record">🎙️</a>
+      <a href="/history.html" class="nav-link" aria-label="History">📚</a>
+      <a href="/kids.html" class="nav-link active" aria-label="Kids">👧</a>
+      <a href="/settings.html" class="nav-link" aria-label="Settings">⚙️</a>
+    </nav>
+    <div id="offlineBanner" class="offline-banner hidden" role="alert">
+      📴 You're offline
+    </div>
+  </header>
+
+  <main>
+    <h1>👧👦 Who's Telling a Story?</h1>
+
+    <div id="kidList" class="kid-grid" aria-label="Kid profiles"></div>
+
+    <div class="card">
+      <h2>Add a new storyteller</h2>
+      <label for="newKidName">Name</label>
+      <input type="text" id="newKidName" placeholder="Enter name" maxlength="30">
+      <label for="newKidEmoji">Pick an emoji</label>
+      <div id="emojiPicker" class="emoji-picker" role="radiogroup" aria-label="Choose an emoji">
+        <button type="button" class="emoji-option" data-emoji="👧" aria-label="Girl">👧</button>
+        <button type="button" class="emoji-option" data-emoji="👦" aria-label="Boy">👦</button>
+        <button type="button" class="emoji-option" data-emoji="🧒" aria-label="Child">🧒</button>
+        <button type="button" class="emoji-option" data-emoji="👶" aria-label="Baby">👶</button>
+        <button type="button" class="emoji-option" data-emoji="🦸" aria-label="Hero">🦸</button>
+        <button type="button" class="emoji-option" data-emoji="🧚" aria-label="Fairy">🧚</button>
+        <button type="button" class="emoji-option selected" data-emoji="⭐" aria-label="Star">⭐</button>
+        <button type="button" class="emoji-option" data-emoji="🌈" aria-label="Rainbow">🌈</button>
+      </div>
+      <button id="addKidBtn" class="action-button">➕ Add Kid</button>
+    </div>
+
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  </main>
+
+  <script type="module">
+    import { showToast, updateOnlineStatus } from '/scripts/app.js';
+    import { getKids, addKid, deleteKid } from '/scripts/storage.js';
+
+    const kidListEl = document.getElementById('kidList');
+    let selectedEmoji = '⭐';
+
+    // Emoji picker
+    document.querySelectorAll('.emoji-option').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.emoji-option').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        selectedEmoji = btn.dataset.emoji;
+      });
+    });
+
+    async function renderKids() {
+      const kids = await getKids();
+      const currentKid = localStorage.getItem('selectedKid');
+
+      if (kids.length === 0) {
+        kidListEl.innerHTML = '<p class="empty-state">No kids added yet. Add one below!</p>';
+        return;
+      }
+
+      kidListEl.innerHTML = kids.map(kid => `
+        <button class="kid-card ${kid.id === currentKid ? 'active' : ''}"
+                data-id="${kid.id}" aria-label="Select ${escapeHtml(kid.name)}">
+          <span class="kid-emoji">${kid.emoji || '⭐'}</span>
+          <span class="kid-name">${escapeHtml(kid.name)}</span>
+          ${kid.id === currentKid ? '<span class="kid-badge">✓ Active</span>' : ''}
+        </button>
+      `).join('');
+
+      kidListEl.querySelectorAll('.kid-card').forEach(card => {
+        card.addEventListener('click', () => {
+          localStorage.setItem('selectedKid', card.dataset.id);
+          showToast(`Switched to ${card.querySelector('.kid-name').textContent}!`);
+          renderKids();
+        });
+      });
+    }
+
+    document.getElementById('addKidBtn').addEventListener('click', async () => {
+      const name = document.getElementById('newKidName').value.trim();
+      if (!name) { showToast('Please enter a name', 'error'); return; }
+      if (name.length > 30) { showToast('Name is too long', 'error'); return; }
+
+      const kid = {
+        id: name.toLowerCase().replace(/\s+/g, '-') + '-' + Date.now(),
+        name,
+        emoji: selectedEmoji,
+      };
+      await addKid(kid);
+      localStorage.setItem('selectedKid', kid.id);
+      document.getElementById('newKidName').value = '';
+      showToast(`${name} added! 🎉`);
+      renderKids();
+    });
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    renderKids();
+    updateOnlineStatus();
+  </script>
+</body>
+</html>

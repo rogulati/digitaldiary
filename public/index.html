@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Record and save your stories">
+  <meta name="theme-color" content="#ff5252">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles/style.css">
+  <title>My Story Recorder</title>
+</head>
+<body>
+  <header>
+    <nav aria-label="Main navigation">
+      <a href="/" class="nav-link active" aria-label="Record">🎙️</a>
+      <a href="/history.html" class="nav-link" aria-label="History">📚</a>
+      <a href="/kids.html" class="nav-link" aria-label="Kids">👧</a>
+      <a href="/settings.html" class="nav-link" aria-label="Settings">⚙️</a>
+    </nav>
+    <div id="offlineBanner" class="offline-banner hidden" role="alert">
+      📴 You're offline — recordings will be saved locally
+    </div>
+  </header>
+
+  <main>
+    <h1>📖 My Story</h1>
+    <p id="kidName" class="subtitle"></p>
+
+    <button id="recordBtn" class="big-button" aria-label="Start recording">
+      🎤 Start Recording
+    </button>
+
+    <div id="recording-indicator" class="recording-indicator hidden" aria-live="polite">
+      <span class="pulse-dot"></span> Recording…
+      <span id="timer">00:00</span>
+    </div>
+
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  </main>
+
+  <script type="module">
+    import { showCurrentKid, showToast, updateOnlineStatus } from '/scripts/app.js';
+    import { startRecording, stopRecording } from '/scripts/recorder.js';
+
+    const btn = document.getElementById('recordBtn');
+    const indicator = document.getElementById('recording-indicator');
+    const timerEl = document.getElementById('timer');
+    let isRecording = false;
+    let timerInterval = null;
+    let seconds = 0;
+
+    function updateTimer() {
+      seconds++;
+      const m = String(Math.floor(seconds / 60)).padStart(2, '0');
+      const s = String(seconds % 60).padStart(2, '0');
+      timerEl.textContent = `${m}:${s}`;
+    }
+
+    btn.addEventListener('click', async () => {
+      if (!isRecording) {
+        try {
+          await startRecording();
+          isRecording = true;
+          btn.textContent = '⏹️ Stop Recording';
+          btn.classList.add('recording');
+          indicator.classList.remove('hidden');
+          seconds = 0;
+          timerInterval = setInterval(updateTimer, 1000);
+        } catch (err) {
+          showToast('Could not access microphone. Please allow mic access.', 'error');
+        }
+      } else {
+        clearInterval(timerInterval);
+        const audioBlob = await stopRecording();
+        isRecording = false;
+        btn.textContent = '🎤 Start Recording';
+        btn.classList.remove('recording');
+        indicator.classList.add('hidden');
+
+        // Store audio blob in IndexedDB as a pending review
+        const { savePendingAudio } = await import('/scripts/storage.js');
+        await savePendingAudio(audioBlob);
+        window.location.href = '/review.html';
+      }
+    });
+
+    showCurrentKid();
+    updateOnlineStatus();
+  </script>
+</body>
+</html>

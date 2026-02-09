@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ff5252">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/icons/icon-192.png">
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles/style.css">
+  <title>Story History</title>
+</head>
+<body>
+  <header>
+    <nav aria-label="Main navigation">
+      <a href="/" class="nav-link" aria-label="Record">🎙️</a>
+      <a href="/history.html" class="nav-link active" aria-label="History">📚</a>
+      <a href="/kids.html" class="nav-link" aria-label="Kids">👧</a>
+      <a href="/settings.html" class="nav-link" aria-label="Settings">⚙️</a>
+    </nav>
+    <div id="offlineBanner" class="offline-banner hidden" role="alert">
+      📴 You're offline
+    </div>
+  </header>
+
+  <main>
+    <h1>📚 My Stories</h1>
+
+    <div class="filter-row">
+      <label for="kidFilter">Filter by kid:</label>
+      <select id="kidFilter" aria-label="Filter stories by kid">
+        <option value="">All Kids</option>
+      </select>
+    </div>
+
+    <div id="storyList" class="story-list" aria-label="Story list">
+      <p class="empty-state">Loading stories…</p>
+    </div>
+
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  </main>
+
+  <script type="module">
+    import { showToast, updateOnlineStatus } from '/scripts/app.js';
+    import { getStories, getKids, deleteStory } from '/scripts/storage.js';
+    import { speakStory, stopSpeaking } from '/scripts/tts.js';
+
+    const listEl = document.getElementById('storyList');
+    const filterEl = document.getElementById('kidFilter');
+
+    async function populateKidFilter() {
+      const kids = await getKids();
+      kids.forEach(kid => {
+        const opt = document.createElement('option');
+        opt.value = kid.id;
+        opt.textContent = kid.name;
+        filterEl.appendChild(opt);
+      });
+
+      // Restore filter
+      const saved = localStorage.getItem('selectedKid');
+      if (saved) filterEl.value = saved;
+    }
+
+    async function renderStories() {
+      const kidId = filterEl.value || null;
+      const stories = await getStories(kidId);
+
+      if (stories.length === 0) {
+        listEl.innerHTML = '<p class="empty-state">No stories yet! Go record one 🎤</p>';
+        return;
+      }
+
+      // Sort newest first
+      stories.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+      listEl.innerHTML = stories.map(story => `
+        <article class="story-card" data-id="${story.id}">
+          <h2>${escapeHtml(story.title)}</h2>
+          <time>${new Date(story.createdAt).toLocaleDateString()}</time>
+          <p class="story-preview">${escapeHtml((story.text || '').slice(0, 120))}…</p>
+          <div class="story-actions">
+            ${story.audioBlob ? '<button class="action-button small" data-action="play">▶️ Play</button>' : ''}
+            <button class="action-button small" data-action="read">🔊 Read</button>
+            <button class="action-button small danger" data-action="delete">🗑️ Delete</button>
+          </div>
+        </article>
+      `).join('');
+
+      // Attach event listeners
+      listEl.querySelectorAll('[data-action]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const card = e.target.closest('.story-card');
+          const id = Number(card.dataset.id);
+          const action = e.target.dataset.action;
+
+          if (action === 'play') {
+            const story = stories.find(s => s.id === id);
+            if (story?.audioBlob) {
+              const url = URL.createObjectURL(story.audioBlob);
+              const audio = new Audio(url);
+              audio.play();
+            }
+          } else if (action === 'read') {
+            const story = stories.find(s => s.id === id);
+            if (story?.text) speakStory(story.text, 'default-high');
+          } else if (action === 'delete') {
+            if (confirm('Delete this story?')) {
+              await deleteStory(id);
+              renderStories();
+              showToast('Story deleted');
+            }
+          }
+        });
+      });
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    filterEl.addEventListener('change', renderStories);
+
+    populateKidFilter();
+    renderStories();
+    updateOnlineStatus();
+  </script>
+</body>
+</html>
