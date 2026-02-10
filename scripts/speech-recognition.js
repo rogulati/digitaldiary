@@ -42,25 +42,22 @@ export function startRecognition({ lang = 'en-US', onUpdate, onEnd } = {}) {
   fullTranscript = '';
   onUpdateCallback = onUpdate || null;
 
+  let resultIndex = 0; // Track which results we've already finalized
+
   recognition.addEventListener('result', (event) => {
     let interimTranscript = '';
-    let finalizedText = '';
 
-    for (let i = 0; i < event.results.length; i++) {
+    for (let i = resultIndex; i < event.results.length; i++) {
       const result = event.results[i];
       if (result.isFinal) {
-        finalizedText += result[0].transcript + ' ';
+        fullTranscript += result[0].transcript + ' ';
+        resultIndex = i + 1; // Don't re-process this result
       } else {
         interimTranscript += result[0].transcript;
       }
     }
 
-    // Build the complete transcript
-    if (finalizedText) {
-      fullTranscript = finalizedText.trim();
-    }
-
-    const displayText = (fullTranscript + ' ' + interimTranscript).trim();
+    const displayText = (fullTranscript + interimTranscript).trim();
 
     if (onUpdateCallback) {
       onUpdateCallback(displayText);
