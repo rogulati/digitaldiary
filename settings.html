@@ -43,9 +43,38 @@
 
       <div class="card">
         <h2>☁️ Upload to OneDrive</h2>
-        <p>Save all stories to your Microsoft OneDrive account.</p>
-        <button id="uploadBtn" class="action-button">📤 Upload All Stories</button>
+
+        <!-- Account status -->
+        <div id="accountInfo" class="account-info hidden">
+          <span id="accountName"></span>
+          <button id="signOutBtn" class="action-button small secondary">Sign Out</button>
+        </div>
+        <button id="signInBtn" class="action-button">🔑 Sign in to Microsoft</button>
+
+        <!-- Folder selection -->
+        <div id="folderSection" class="hidden">
+          <label>Upload to folder:</label>
+          <div class="folder-path-row">
+            <span id="selectedFolderPath" class="folder-path">Stories</span>
+            <button id="changeFolderBtn" class="action-button small secondary">📂 Change</button>
+          </div>
+          <button id="uploadBtn" class="action-button">📤 Upload All Stories</button>
+        </div>
         <p id="uploadStatus" class="status-text"></p>
+      </div>
+
+      <!-- Folder picker modal -->
+      <div id="folderModal" class="modal-overlay hidden" role="dialog" aria-label="Choose a folder">
+        <div class="modal-content card">
+          <h2>📂 Choose a Folder</h2>
+          <div id="folderBreadcrumb" class="breadcrumb"></div>
+          <div id="folderList" class="folder-list"></div>
+          <div class="button-row">
+            <button id="folderSelectBtn" class="action-button">✅ Use This Folder</button>
+            <button id="folderNewBtn" class="action-button secondary">➕ New Folder</button>
+            <button id="folderCancelBtn" class="action-button secondary">Cancel</button>
+          </div>
+        </div>
       </div>
 
       <div class="card">
@@ -67,16 +96,28 @@
     import { showToast, updateOnlineStatus } from './scripts/app.js';
     import { getStories, clearAllStories } from './scripts/storage.js';
 
+    // --- DOM refs ---
     const pinGate = document.getElementById('pinGate');
     const settingsPanel = document.getElementById('settingsPanel');
     const pinInput = document.getElementById('pinInput');
     const pinError = document.getElementById('pinError');
+    const accountInfo = document.getElementById('accountInfo');
+    const accountName = document.getElementById('accountName');
+    const signInBtn = document.getElementById('signInBtn');
+    const signOutBtn = document.getElementById('signOutBtn');
+    const folderSection = document.getElementById('folderSection');
+    const selectedFolderPath = document.getElementById('selectedFolderPath');
+    const changeFolderBtn = document.getElementById('changeFolderBtn');
+    const folderModal = document.getElementById('folderModal');
+    const folderBreadcrumb = document.getElementById('folderBreadcrumb');
+    const folderList = document.getElementById('folderList');
+    const folderSelectBtn = document.getElementById('folderSelectBtn');
+    const folderNewBtn = document.getElementById('folderNewBtn');
+    const folderCancelBtn = document.getElementById('folderCancelBtn');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const statusEl = document.getElementById('uploadStatus');
 
-    // SHA-256 hash of the parent PIN (default: "1234")
-    // To change: run in browser console:
-    //   crypto.subtle.digest('SHA-256', new TextEncoder().encode('YOUR_PIN'))
-    //     .then(b => Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2,'0')).join(''))
-    //     .then(console.log)
+    // --- PIN ---
     const PIN_HASH = '03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4';
 
     async function hashPin(pin) {
@@ -86,26 +127,21 @@
       return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
-    // Check if already authenticated this session
     if (sessionStorage.getItem('parentAuth') === 'true') {
       pinGate.classList.add('hidden');
       settingsPanel.classList.remove('hidden');
-      loadSettings();
+      initSettings();
     }
 
-    // Client-side PIN verification using SHA-256 hash
     document.getElementById('pinSubmit').addEventListener('click', async () => {
       const pin = pinInput.value;
       if (!pin) return;
-
-      const hash = await hashPin(pin);
-
-      if (hash === PIN_HASH) {
+      if (await hashPin(pin) === PIN_HASH) {
         sessionStorage.setItem('parentAuth', 'true');
         pinGate.classList.add('hidden');
         settingsPanel.classList.remove('hidden');
         pinError.classList.add('hidden');
-        loadSettings();
+        initSettings();
       } else {
         pinError.classList.remove('hidden');
         pinInput.value = '';
@@ -113,76 +149,221 @@
       }
     });
 
-    // Enter key submits PIN
     pinInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') document.getElementById('pinSubmit').click();
     });
 
-    async function loadSettings() {
-      const stories = await getStories();
-      const totalSize = stories.reduce((sum, s) => {
-        let size = (s.text || '').length;
-        if (s.audioBlob) size += s.audioBlob.size;
-        return sum + size;
-      }, 0);
-      const sizeMB = (totalSize / (1024 * 1024)).toFixed(2);
-      document.getElementById('storageInfo').textContent =
-        `${stories.length} stories stored (≈ ${sizeMB} MB)`;
+    // --- MSAL persistent login ---
+    const CLIENT_ID = '50dc213f-455f-4e3d-893d-ee6c4c700b77';
+    const SCOPES = ['Files.ReadWrite'];
+    let msalInstance = null;
+
+    async function ensureMsal() {
+      if (msalInstance) return msalInstance;
+      if (!window.msal) await loadScript('https://alcdn.msauth.net/browser/3.6.0/js/msal-browser.min.js');
+      msalInstance = new msal.PublicClientApplication({
+        auth: {
+          clientId: CLIENT_ID,
+          redirectUri: window.location.href.split('?')[0],
+        },
+        cache: {
+          cacheLocation: 'localStorage',
+          storeAuthStateInCookie: false,
+        },
+      });
+      await msalInstance.initialize();
+      return msalInstance;
     }
 
-    // OneDrive Upload
-    document.getElementById('uploadBtn').addEventListener('click', async () => {
-      if (!navigator.onLine) {
-        showToast('Upload requires internet connection', 'error');
-        return;
+    /** Get a valid access token — silent first, popup fallback */
+    async function getAccessToken() {
+      const instance = await ensureMsal();
+      const accounts = instance.getAllAccounts();
+      if (accounts.length === 0) return null;
+      try {
+        const resp = await instance.acquireTokenSilent({ account: accounts[0], scopes: SCOPES });
+        return resp.accessToken;
+      } catch {
+        const resp = await instance.acquireTokenPopup({ scopes: SCOPES });
+        return resp.accessToken;
       }
+    }
+
+    async function signIn() {
+      const instance = await ensureMsal();
+      const resp = await instance.loginPopup({ scopes: SCOPES });
+      updateAccountUI(resp.account);
+      return resp.account;
+    }
+
+    async function signOut() {
+      const instance = await ensureMsal();
+      const accounts = instance.getAllAccounts();
+      if (accounts.length > 0) {
+        await instance.logoutPopup({ account: accounts[0] });
+      }
+      localStorage.removeItem('onedriveFolderId');
+      localStorage.removeItem('onedriveFolderPath');
+      updateAccountUI(null);
+    }
+
+    function updateAccountUI(account) {
+      if (account) {
+        accountInfo.classList.remove('hidden');
+        accountName.textContent = `✅ ${account.name || account.username}`;
+        signInBtn.classList.add('hidden');
+        folderSection.classList.remove('hidden');
+        const saved = localStorage.getItem('onedriveFolderPath');
+        if (saved) selectedFolderPath.textContent = saved;
+      } else {
+        accountInfo.classList.add('hidden');
+        signInBtn.classList.remove('hidden');
+        folderSection.classList.add('hidden');
+      }
+    }
+
+    signInBtn.addEventListener('click', async () => {
+      try { await signIn(); } catch (err) { showToast('Sign-in failed: ' + err.message, 'error'); }
+    });
+    signOutBtn.addEventListener('click', async () => {
+      try { await signOut(); } catch (err) { showToast('Sign-out failed', 'error'); }
+    });
+
+    // --- Folder picker ---
+    let currentFolderId = null;
+    let folderStack = [];
+
+    async function graphGet(url) {
+      const token = await getAccessToken();
+      if (!token) throw new Error('Not signed in');
+      const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!resp.ok) throw new Error(`Graph API error: ${resp.status}`);
+      return resp.json();
+    }
+
+    async function openFolderPicker() {
+      folderStack = [{ id: null, name: 'OneDrive' }];
+      currentFolderId = null;
+      await loadFolderContents();
+      folderModal.classList.remove('hidden');
+    }
+
+    async function loadFolderContents() {
+      folderList.innerHTML = '<p class="empty-state">Loading…</p>';
+      renderBreadcrumb();
+      try {
+        const endpoint = currentFolderId
+          ? `https://graph.microsoft.com/v1.0/me/drive/items/${currentFolderId}/children?$filter=folder ne null&$select=id,name,folder&$top=100`
+          : `https://graph.microsoft.com/v1.0/me/drive/root/children?$filter=folder ne null&$select=id,name,folder&$top=100`;
+        const data = await graphGet(endpoint);
+        const folders = data.value || [];
+        if (folders.length === 0) {
+          folderList.innerHTML = '<p class="empty-state">No subfolders here</p>';
+        } else {
+          folderList.innerHTML = folders.map(f =>
+            `<button class="folder-item" data-id="${f.id}" data-name="${escapeHtml(f.name)}">📁 ${escapeHtml(f.name)}</button>`
+          ).join('');
+          folderList.querySelectorAll('.folder-item').forEach(btn => {
+            btn.addEventListener('click', async () => {
+              folderStack.push({ id: btn.dataset.id, name: btn.dataset.name });
+              currentFolderId = btn.dataset.id;
+              await loadFolderContents();
+            });
+          });
+        }
+      } catch (err) {
+        folderList.innerHTML = `<p class="empty-state error-text">${err.message}</p>`;
+      }
+    }
+
+    function renderBreadcrumb() {
+      folderBreadcrumb.innerHTML = folderStack.map((item, i) => {
+        if (i === folderStack.length - 1) {
+          return `<span class="breadcrumb-current">${escapeHtml(item.name)}</span>`;
+        }
+        return `<button class="breadcrumb-link" data-index="${i}">${escapeHtml(item.name)}</button><span class="breadcrumb-sep"> › </span>`;
+      }).join('');
+      folderBreadcrumb.querySelectorAll('.breadcrumb-link').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const idx = Number(btn.dataset.index);
+          folderStack = folderStack.slice(0, idx + 1);
+          currentFolderId = folderStack[idx].id;
+          await loadFolderContents();
+        });
+      });
+    }
+
+    changeFolderBtn.addEventListener('click', openFolderPicker);
+
+    folderSelectBtn.addEventListener('click', () => {
+      const path = folderStack.map(f => f.name).join(' › ');
+      selectedFolderPath.textContent = path;
+      localStorage.setItem('onedriveFolderId', currentFolderId || '');
+      localStorage.setItem('onedriveFolderPath', path);
+      folderModal.classList.add('hidden');
+      showToast('Folder set: ' + path);
+    });
+
+    folderNewBtn.addEventListener('click', async () => {
+      const name = prompt('New folder name:');
+      if (!name || !name.trim()) return;
+      try {
+        const token = await getAccessToken();
+        const parentUrl = currentFolderId
+          ? `https://graph.microsoft.com/v1.0/me/drive/items/${currentFolderId}/children`
+          : `https://graph.microsoft.com/v1.0/me/drive/root/children`;
+        const resp = await fetch(parentUrl, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name.trim(), folder: {}, '@microsoft.graph.conflictBehavior': 'rename' }),
+        });
+        if (!resp.ok) throw new Error('Failed to create folder');
+        await loadFolderContents();
+        showToast(`Created folder: ${name.trim()}`);
+      } catch (err) {
+        showToast('Error creating folder: ' + err.message, 'error');
+      }
+    });
+
+    folderCancelBtn.addEventListener('click', () => folderModal.classList.add('hidden'));
+
+    // --- Upload ---
+    uploadBtn.addEventListener('click', async () => {
+      if (!navigator.onLine) { showToast('Upload requires internet', 'error'); return; }
+
+      const token = await getAccessToken();
+      if (!token) { showToast('Please sign in first', 'error'); return; }
+
+      const targetFolderId = localStorage.getItem('onedriveFolderId') || '';
+      const stories = await getStories();
+      if (stories.length === 0) { showToast('No stories to upload', 'error'); return; }
+
+      uploadBtn.disabled = true;
+      let uploaded = 0;
 
       try {
-        // Dynamically load MSAL
-        if (!window.msal) {
-          await loadScript('https://alcdn.msauth.net/browser/3.6.0/js/msal-browser.min.js');
-        }
-
-        const msalConfig = {
-          auth: {
-            clientId: '50dc213f-455f-4e3d-893d-ee6c4c700b77', // Replace with your App Registration client ID
-            redirectUri: window.location.href.split('?')[0],
-          },
-        };
-        const msalInstance = new msal.PublicClientApplication(msalConfig);
-        await msalInstance.initialize();
-
-        const loginResponse = await msalInstance.loginPopup({
-          scopes: ['Files.ReadWrite'],
-        });
-        const tokenResponse = await msalInstance.acquireTokenSilent({
-          account: loginResponse.account,
-          scopes: ['Files.ReadWrite'],
-        });
-
-        const stories = await getStories();
-        const statusEl = document.getElementById('uploadStatus');
-        let uploaded = 0;
-
         for (const story of stories) {
           const safeName = (story.title || 'untitled').replace(/[^a-zA-Z0-9 ]/g, '').slice(0, 50);
           const timestamp = new Date(story.createdAt).toISOString().slice(0, 10);
-          const prefix = `Stories/${story.kidId || 'default'}/${timestamp}-${safeName}`;
+          const subPath = `${story.kidId || 'default'}/${timestamp}-${safeName}`;
 
-          // Upload text
+          // Upload to chosen folder, or default to root:/Stories/
+          const basePath = targetFolderId
+            ? `https://graph.microsoft.com/v1.0/me/drive/items/${targetFolderId}:/${subPath}`
+            : `https://graph.microsoft.com/v1.0/me/drive/root:/Stories/${subPath}`;
+
           if (story.text) {
-            await fetch(`https://graph.microsoft.com/v1.0/me/drive/root:/${prefix}.txt:/content`, {
+            await fetch(`${basePath}.txt:/content`, {
               method: 'PUT',
-              headers: { Authorization: `Bearer ${tokenResponse.accessToken}` },
+              headers: { Authorization: `Bearer ${token}` },
               body: new Blob([story.text], { type: 'text/plain' }),
             });
           }
 
-          // Upload audio
           if (story.audioBlob) {
-            await fetch(`https://graph.microsoft.com/v1.0/me/drive/root:/${prefix}.webm:/content`, {
+            await fetch(`${basePath}.webm:/content`, {
               method: 'PUT',
-              headers: { Authorization: `Bearer ${tokenResponse.accessToken}` },
+              headers: { Authorization: `Bearer ${token}` },
               body: story.audioBlob,
             });
           }
@@ -195,10 +376,24 @@
         showToast('Upload complete! 🎉');
       } catch (err) {
         showToast('Upload failed: ' + err.message, 'error');
+      } finally {
+        uploadBtn.disabled = false;
       }
     });
 
-    // Clear all
+    // --- Storage info & clear ---
+    async function loadSettings() {
+      const stories = await getStories();
+      const totalSize = stories.reduce((sum, s) => {
+        let size = (s.text || '').length;
+        if (s.audioBlob) size += s.audioBlob.size;
+        return sum + size;
+      }, 0);
+      const sizeMB = (totalSize / (1024 * 1024)).toFixed(2);
+      document.getElementById('storageInfo').textContent =
+        `${stories.length} stories stored (≈ ${sizeMB} MB)`;
+    }
+
     document.getElementById('clearBtn').addEventListener('click', async () => {
       if (confirm('Are you sure? This will delete ALL stories permanently.')) {
         await clearAllStories();
@@ -206,6 +401,25 @@
         loadSettings();
       }
     });
+
+    // --- Init ---
+    async function initSettings() {
+      loadSettings();
+      // Restore existing MSAL session from localStorage
+      try {
+        const instance = await ensureMsal();
+        const accounts = instance.getAllAccounts();
+        if (accounts.length > 0) {
+          updateAccountUI(accounts[0]);
+        }
+      } catch { /* MSAL not loaded or offline — fine */ }
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
 
     function loadScript(src) {
       return new Promise((resolve, reject) => {
