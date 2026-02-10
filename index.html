@@ -75,6 +75,16 @@
     btn.addEventListener('click', async () => {
       if (!isRecording) {
         try {
+          // Start speech recognition FIRST on Android, before getUserMedia
+          // grabs the mic — otherwise Android's speech service is blocked.
+          if (isSupported) {
+            startRecognition({
+              onUpdate: (text) => {
+                transcriptText.textContent = text || 'Listening…';
+              },
+            });
+          }
+
           await startRecording();
           isRecording = true;
           btn.textContent = '⏹️ Stop Recording';
@@ -84,16 +94,9 @@
           transcriptText.textContent = 'Listening…';
           seconds = 0;
           timerInterval = setInterval(updateTimer, 1000);
-
-          // Start live speech recognition in parallel
-          if (isSupported) {
-            startRecognition({
-              onUpdate: (text) => {
-                transcriptText.textContent = text || 'Listening…';
-              },
-            });
-          }
         } catch (err) {
+          // If mic access fails, also stop speech recognition
+          if (isSupported) stopRecognition();
           showToast('Could not access microphone. Please allow mic access.', 'error');
         }
       } else {

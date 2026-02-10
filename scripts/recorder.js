@@ -10,11 +10,12 @@ let resolveStop = null;
 
 /**
  * Start audio recording.
- * @returns {Promise<void>}
+ * @param {MediaStream} [existingStream] — optional mic stream to reuse
+ * @returns {Promise<MediaStream>} the mic stream (for sharing with other APIs)
  * @throws if microphone access is denied
  */
-export async function startRecording() {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+export async function startRecording(existingStream) {
+  const stream = existingStream || await navigator.mediaDevices.getUserMedia({ audio: true });
 
   // Prefer webm/opus, fall back to whatever the browser supports
   const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')

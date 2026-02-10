@@ -5,7 +5,7 @@
  * Includes proper cache versioning so updates propagate to users.
  */
 
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v5';
 const CACHE_NAME = `digital-diary-${CACHE_VERSION}`;
 
 // Static assets to pre-cache on install

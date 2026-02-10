@@ -78,7 +78,13 @@ export function startRecognition({ lang = 'en-US', onUpdate, onEnd } = {}) {
   recognition.addEventListener('error', (event) => {
     // 'no-speech' and 'aborted' are normal — ignore them
     if (event.error === 'no-speech' || event.error === 'aborted') return;
+
     console.warn('Speech recognition error:', event.error);
+
+    // On 'not-allowed' or 'service-not-allowed', stop trying
+    if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+      if (recognition) recognition._keepAlive = false;
+    }
   });
 
   recognition._keepAlive = true;
