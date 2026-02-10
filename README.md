@@ -1,12 +1,11 @@
 # 📖 Digital Diary — Kid-Friendly Story Recorder PWA
 
-A progressive web app where kids can record stories with their voice, get AI-powered transcription, listen with fun character voices, and save everything for later.
+A progressive web app where kids can record stories with their voice, see their words appear in real-time via browser speech recognition, listen with fun character voices, and save everything for later.
 
 ## Features
 
-- 🎙️ **Voice Recording** — tap to record, tap to stop
-- 🤖 **AI Transcription** — OpenAI Whisper converts speech to text
-- ✨ **AI Title & Formatting** — GPT generates kid-friendly titles and punctuation
+- 🎤 **Voice Recording** — tap to record, tap to stop
+- ✨ **Live Transcription** — browser-native speech recognition (no API key, no cost)
 - 🔊 **Text-to-Speech** — stories read back in fun character voices
 - 👧👦 **Multiple Kids** — each child gets their own profile
 - 🔒 **Parent PIN** — settings/upload locked behind a PIN (server-validated)
@@ -19,7 +18,7 @@ A progressive web app where kids can record stories with their voice, get AI-pow
 ```
 digital-diary/
 ├── public/                  # Static files served to the browser
-│   ├── index.html           # Home / record page
+│   ├── index.html           # Home / record page (with live transcription)
 │   ├── review.html          # Review, edit, listen to story
 │   ├── history.html         # Browse past stories
 │   ├── kids.html            # Select / manage kid profiles
@@ -32,12 +31,10 @@ digital-diary/
 │   └── scripts/
 │       ├── app.js           # Shared utilities & navigation
 │       ├── recorder.js      # Audio recording logic
+│       ├── speech-recognition.js  # Browser-native speech-to-text
 │       ├── tts.js           # Text-to-speech playback
 │       └── storage.js       # IndexedDB wrapper
 ├── api/                     # Vercel serverless functions
-│   ├── transcribe.js        # Whisper transcription
-│   ├── title.js             # GPT title generation
-│   ├── punctuate.js         # GPT punctuation/formatting
 │   └── verify-pin.js        # Server-side PIN verification
 ├── package.json
 ├── vercel.json
@@ -52,7 +49,7 @@ digital-diary/
 
 - [Node.js](https://nodejs.org/) 18+
 - [Vercel CLI](https://vercel.com/docs/cli) (`npm i -g vercel`)
-- An [OpenAI API key](https://platform.openai.com/api-keys)
+- A modern browser (Chrome, Edge, or Safari) for speech recognition
 
 ### Local Development
 
@@ -74,7 +71,6 @@ Open `http://localhost:3000` in your browser.
 
 ```bash
 # Set environment variables
-vercel env add OPENAI_API_KEY
 vercel env add PARENT_PIN_HASH
 
 # Deploy
@@ -102,20 +98,21 @@ Set the resulting hash as `PARENT_PIN_HASH` in your environment.
 | Feature | Offline | Online |
 |---------|---------|--------|
 | Record audio | ✅ | ✅ |
+| Live speech-to-text | ⚠️ (browser-dependent) | ✅ |
 | Play back recording | ✅ | ✅ |
 | Browse story history | ✅ | ✅ |
-| AI transcription | ❌ (queued) | ✅ |
-| AI title generation | ❌ (queued) | ✅ |
 | Text-to-speech | ✅ (browser) | ✅ |
 | OneDrive upload | ❌ | ✅ |
 
-When offline, API-dependent actions are queued and automatically processed when connectivity returns.
+> **Note:** Chrome requires an internet connection for SpeechRecognition.
+> Edge and Android may work offline depending on the device.
 
 ## Tech Stack
 
 - **Frontend**: Vanilla HTML/CSS/JS (no framework — fast & simple)
-- **Backend**: Vercel serverless functions (Node.js)
-- **AI**: OpenAI Whisper (STT) + GPT-4.1-mini (text)
+- **Speech-to-Text**: Web Speech API (browser-native, free)
+- **Text-to-Speech**: Web Speech Synthesis API (browser-native, free)
+- **Backend**: Vercel serverless functions (PIN verification only)
 - **Storage**: IndexedDB (local), OneDrive (cloud backup)
 - **Auth**: MSAL.js for Microsoft Graph API
 

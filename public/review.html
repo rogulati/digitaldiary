@@ -19,7 +19,7 @@
       <a href="/settings.html" class="nav-link" aria-label="Settings">⚙️</a>
     </nav>
     <div id="offlineBanner" class="offline-banner hidden" role="alert">
-      📴 You're offline — AI features unavailable
+      📴 You're offline
     </div>
   </header>
 
@@ -30,22 +30,10 @@
 
     <div class="card">
       <label for="storyTitle">Story Title</label>
-      <input type="text" id="storyTitle" placeholder="My Amazing Story" maxlength="100">
+      <input type="text" id="storyTitle" placeholder="Give your story a name!" maxlength="100">
 
       <label for="storyText">Story Text</label>
-      <textarea id="storyText" rows="8" placeholder="Your story will appear here after transcription…"></textarea>
-    </div>
-
-    <div class="button-row">
-      <button id="transcribeBtn" class="action-button" aria-label="Transcribe audio">
-        🤖 Transcribe
-      </button>
-      <button id="titleBtn" class="action-button" aria-label="Generate title">
-        ✨ Auto Title
-      </button>
-      <button id="punctuateBtn" class="action-button" aria-label="Fix punctuation">
-        📝 Fix Text
-      </button>
+      <textarea id="storyText" rows="8" placeholder="Your story text appears here — you can edit it too!"></textarea>
     </div>
 
     <div class="card">
@@ -54,12 +42,14 @@
         <option value="default-high">🧚 Fairy (high pitch)</option>
         <option value="default-low">🐻 Bear (low pitch)</option>
       </select>
-      <button id="speakBtn" class="action-button" aria-label="Read story aloud">
-        🔊 Read Story
-      </button>
-      <button id="stopSpeakBtn" class="action-button secondary" aria-label="Stop reading">
-        🔇 Stop
-      </button>
+      <div class="button-row">
+        <button id="speakBtn" class="action-button" aria-label="Read story aloud">
+          🔊 Read Story
+        </button>
+        <button id="stopSpeakBtn" class="action-button secondary" aria-label="Stop reading">
+          🔇 Stop
+        </button>
+      </div>
     </div>
 
     <div class="button-row">
@@ -69,92 +59,29 @@
     </div>
 
     <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
-    <div id="spinner" class="spinner hidden" aria-label="Loading"></div>
   </main>
 
   <script type="module">
     import { showToast, updateOnlineStatus } from '/scripts/app.js';
-    import { getPendingAudio, saveStory } from '/scripts/storage.js';
+    import { getPendingRecording, saveStory } from '/scripts/storage.js';
     import { speakStory, stopSpeaking } from '/scripts/tts.js';
 
     const player = document.getElementById('player');
     const storyText = document.getElementById('storyText');
     const storyTitle = document.getElementById('storyTitle');
-    const spinner = document.getElementById('spinner');
 
-    // Load the pending audio from IndexedDB (not localStorage!)
-    async function loadAudio() {
-      const blob = await getPendingAudio();
-      if (blob) {
-        player.src = URL.createObjectURL(blob);
+    // Load the pending audio + transcript from IndexedDB
+    async function loadPending() {
+      const pending = await getPendingRecording();
+      if (pending?.blob) {
+        player.src = URL.createObjectURL(pending.blob);
       } else {
         showToast('No recording found. Go back and record first.', 'error');
       }
-    }
-
-    function showSpinner() { spinner.classList.remove('hidden'); }
-    function hideSpinner() { spinner.classList.add('hidden'); }
-
-    async function callApi(url, body) {
-      if (!navigator.onLine) {
-        showToast('You are offline. This feature needs internet.', 'error');
-        return null;
-      }
-      showSpinner();
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || `Server error (${res.status})`);
-        }
-        return await res.json();
-      } catch (err) {
-        showToast(err.message, 'error');
-        return null;
-      } finally {
-        hideSpinner();
+      if (pending?.transcript) {
+        storyText.value = pending.transcript;
       }
     }
-
-    // Transcribe
-    document.getElementById('transcribeBtn').addEventListener('click', async () => {
-      const blob = await getPendingAudio();
-      if (!blob) { showToast('No audio to transcribe', 'error'); return; }
-      if (!navigator.onLine) { showToast('Transcription requires internet', 'error'); return; }
-
-      showSpinner();
-      try {
-        const formData = new FormData();
-        formData.append('audio', blob, 'recording.webm');
-        const res = await fetch('/api/transcribe', { method: 'POST', body: formData });
-        if (!res.ok) throw new Error('Transcription failed');
-        const data = await res.json();
-        storyText.value = data.text;
-        showToast('Transcription complete!');
-      } catch (err) {
-        showToast(err.message, 'error');
-      } finally {
-        hideSpinner();
-      }
-    });
-
-    // Auto title
-    document.getElementById('titleBtn').addEventListener('click', async () => {
-      if (!storyText.value.trim()) { showToast('Write or transcribe a story first', 'error'); return; }
-      const data = await callApi('/api/title', { story: storyText.value });
-      if (data) storyTitle.value = data.title;
-    });
-
-    // Punctuate
-    document.getElementById('punctuateBtn').addEventListener('click', async () => {
-      if (!storyText.value.trim()) { showToast('Write or transcribe a story first', 'error'); return; }
-      const data = await callApi('/api/punctuate', { storyText: storyText.value });
-      if (data) storyText.value = data.text;
-    });
 
     // TTS
     document.getElementById('speakBtn').addEventListener('click', () => {
@@ -167,13 +94,13 @@
 
     // Save
     document.getElementById('saveBtn').addEventListener('click', async () => {
-      const blob = await getPendingAudio();
+      const pending = await getPendingRecording();
       const kidId = localStorage.getItem('selectedKid') || 'default';
       const story = {
         kidId,
         title: storyTitle.value || 'Untitled Story',
         text: storyText.value,
-        audioBlob: blob,
+        audioBlob: pending?.blob || null,
         createdAt: new Date().toISOString(),
       };
       await saveStory(story);
@@ -181,7 +108,7 @@
       setTimeout(() => { window.location.href = '/history.html'; }, 1200);
     });
 
-    loadAudio();
+    loadPending();
     updateOnlineStatus();
   </script>
 </body>

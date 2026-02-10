@@ -39,19 +39,31 @@
       <span id="timer">00:00</span>
     </div>
 
+    <div id="liveTranscript" class="card hidden" aria-live="polite">
+      <label>✨ Live transcript</label>
+      <p id="transcriptText" class="transcript-preview">Listening…</p>
+    </div>
+
     <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
   </main>
 
   <script type="module">
     import { showCurrentKid, showToast, updateOnlineStatus } from '/scripts/app.js';
     import { startRecording, stopRecording } from '/scripts/recorder.js';
+    import { isSupported, startRecognition, stopRecognition } from '/scripts/speech-recognition.js';
 
     const btn = document.getElementById('recordBtn');
     const indicator = document.getElementById('recording-indicator');
     const timerEl = document.getElementById('timer');
+    const liveTranscript = document.getElementById('liveTranscript');
+    const transcriptText = document.getElementById('transcriptText');
     let isRecording = false;
     let timerInterval = null;
     let seconds = 0;
+
+    if (!isSupported) {
+      showToast('Speech-to-text not supported in this browser. Try Chrome or Edge.', 'error');
+    }
 
     function updateTimer() {
       seconds++;
@@ -68,22 +80,38 @@
           btn.textContent = '⏹️ Stop Recording';
           btn.classList.add('recording');
           indicator.classList.remove('hidden');
+          liveTranscript.classList.remove('hidden');
+          transcriptText.textContent = 'Listening…';
           seconds = 0;
           timerInterval = setInterval(updateTimer, 1000);
+
+          // Start live speech recognition in parallel
+          if (isSupported) {
+            startRecognition({
+              onUpdate: (text) => {
+                transcriptText.textContent = text || 'Listening…';
+              },
+            });
+          }
         } catch (err) {
           showToast('Could not access microphone. Please allow mic access.', 'error');
         }
       } else {
         clearInterval(timerInterval);
+
+        // Stop both audio recording and speech recognition
         const audioBlob = await stopRecording();
+        const transcript = isSupported ? stopRecognition() : '';
+
         isRecording = false;
         btn.textContent = '🎤 Start Recording';
         btn.classList.remove('recording');
         indicator.classList.add('hidden');
+        liveTranscript.classList.add('hidden');
 
-        // Store audio blob in IndexedDB as a pending review
-        const { savePendingAudio } = await import('/scripts/storage.js');
-        await savePendingAudio(audioBlob);
+        // Store audio blob AND transcript in IndexedDB
+        const { savePendingRecording } = await import('/scripts/storage.js');
+        await savePendingRecording(audioBlob, transcript);
         window.location.href = '/review.html';
       }
     });

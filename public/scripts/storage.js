@@ -42,32 +42,36 @@ function openDB() {
   });
 }
 
-// --- Pending Audio (temp storage between record → review) ---
+// --- Pending Recording (temp storage between record → review) ---
 
 /**
- * Save a pending audio blob for review.
- * @param {Blob} blob
+ * Save a pending recording (audio blob + transcript) for review.
+ * @param {Blob} blob - the audio blob
+ * @param {string} transcript - the live-transcribed text
  */
-export async function savePendingAudio(blob) {
+export async function savePendingRecording(blob, transcript = '') {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction('pending', 'readwrite');
-    tx.objectStore('pending').put({ key: 'latestAudio', blob });
+    tx.objectStore('pending').put({ key: 'latestRecording', blob, transcript });
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
 }
 
 /**
- * Retrieve the pending audio blob.
- * @returns {Promise<Blob|null>}
+ * Retrieve the pending recording (audio blob + transcript).
+ * @returns {Promise<{blob: Blob|null, transcript: string}>}
  */
-export async function getPendingAudio() {
+export async function getPendingRecording() {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction('pending', 'readonly');
-    const req = tx.objectStore('pending').get('latestAudio');
-    req.onsuccess = () => resolve(req.result?.blob || null);
+    const req = tx.objectStore('pending').get('latestRecording');
+    req.onsuccess = () => resolve({
+      blob: req.result?.blob || null,
+      transcript: req.result?.transcript || '',
+    });
     req.onerror = () => reject(req.error);
   });
 }

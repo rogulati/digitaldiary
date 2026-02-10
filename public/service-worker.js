@@ -5,7 +5,7 @@
  * Includes proper cache versioning so updates propagate to users.
  */
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME = `digital-diary-${CACHE_VERSION}`;
 
 // Static assets to pre-cache on install
@@ -21,6 +21,7 @@ const STATIC_ASSETS = [
   '/scripts/recorder.js',
   '/scripts/tts.js',
   '/scripts/storage.js',
+  '/scripts/speech-recognition.js',
   '/manifest.json',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
