@@ -35,7 +35,7 @@ export async function showCurrentKid() {
   }
 
   try {
-    const { getKids } = await import('/scripts/storage.js');
+    const { getKids } = await import('./storage.js');
     const kids = await getKids();
     const kid = kids.find(k => k.id === kidId);
     kidNameEl.textContent = kid ? `${kid.emoji} ${kid.name}'s turn` : '';
@@ -66,7 +66,7 @@ export function updateOnlineStatus() {
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     try {
-      await navigator.serviceWorker.register('/service-worker.js');
+      await navigator.serviceWorker.register('./service-worker.js');
     } catch (err) {
       console.warn('Service worker registration failed:', err);
     }

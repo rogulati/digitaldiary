@@ -8,7 +8,7 @@ A progressive web app where kids can record stories with their voice, see their 
 - ✨ **Live Transcription** — browser-native speech recognition (no API key, no cost)
 - 🔊 **Text-to-Speech** — stories read back in fun character voices
 - 👧👦 **Multiple Kids** — each child gets their own profile
-- 🔒 **Parent PIN** — settings/upload locked behind a PIN (server-validated)
+- 🔒 **Parent PIN** — settings locked behind a client-side SHA-256 PIN
 - 📤 **OneDrive Backup** — save stories to the cloud
 - 📴 **Offline Support** — record and browse stories without internet
 - 📱 **Installable PWA** — add to home screen on any device
@@ -17,81 +17,81 @@ A progressive web app where kids can record stories with their voice, see their 
 
 ```
 digital-diary/
-├── public/                  # Static files served to the browser
-│   ├── index.html           # Home / record page (with live transcription)
-│   ├── review.html          # Review, edit, listen to story
-│   ├── history.html         # Browse past stories
-│   ├── kids.html            # Select / manage kid profiles
-│   ├── settings.html        # Parent-only settings & upload
-│   ├── manifest.json        # PWA manifest
-│   ├── service-worker.js    # Offline caching & sync
-│   ├── icons/               # App icons
-│   ├── styles/
-│   │   └── style.css        # All styles
-│   └── scripts/
-│       ├── app.js           # Shared utilities & navigation
-│       ├── recorder.js      # Audio recording logic
-│       ├── speech-recognition.js  # Browser-native speech-to-text
-│       ├── tts.js           # Text-to-speech playback
-│       └── storage.js       # IndexedDB wrapper
-├── api/                     # Vercel serverless functions
-│   └── verify-pin.js        # Server-side PIN verification
-├── package.json
-├── vercel.json
-├── .env.example
+├── index.html               # Home / record page (with live transcription)
+├── review.html              # Review, edit, listen to story
+├── history.html             # Browse past stories
+├── kids.html                # Select / manage kid profiles
+├── settings.html            # Parent-only settings & upload
+├── manifest.json            # PWA manifest
+├── service-worker.js        # Offline caching
+├── icons/                   # App icons
+├── styles/
+│   └── style.css            # All styles
+├── scripts/
+│   ├── app.js               # Shared utilities & navigation
+│   ├── recorder.js          # Audio recording logic
+│   ├── speech-recognition.js # Browser-native speech-to-text
+│   ├── tts.js               # Text-to-speech playback
+│   └── storage.js           # IndexedDB wrapper
 ├── .gitignore
 └── README.md
 ```
 
 ## Getting Started
 
-### Prerequisites
+### Deploy to GitHub Pages
 
-- [Node.js](https://nodejs.org/) 18+
-- [Vercel CLI](https://vercel.com/docs/cli) (`npm i -g vercel`)
-- A modern browser (Chrome, Edge, or Safari) for speech recognition
+1. Create a new GitHub repository (e.g. `digital-diary`)
+2. Push this code:
+   ```bash
+   git remote add origin https://github.com/YOUR_USERNAME/digital-diary.git
+   git branch -M main
+   git push -u origin main
+   ```
+3. Go to **Settings → Pages** in your GitHub repo
+4. Under **Source**, select **Deploy from a branch**
+5. Choose **main** branch and **/ (root)** folder → click **Save**
+6. Your app will be live at `https://YOUR_USERNAME.github.io/digital-diary/`
 
 ### Local Development
 
-```bash
-git clone https://github.com/YOUR_USERNAME/digital-diary.git
-cd digital-diary
-npm install
-
-# Copy env template and fill in your keys
-cp .env.example .env
-
-# Start local dev server
-npm run dev
-```
-
-Open `http://localhost:3000` in your browser.
-
-### Deploy to Vercel
+No build tools required — just serve the files with any static server:
 
 ```bash
-# Set environment variables
-vercel env add PARENT_PIN_HASH
+# Python
+python -m http.server 3000
 
-# Deploy
-vercel --prod
+# Node.js (npx)
+npx serve .
+
+# VS Code Live Server extension
+# Right-click index.html → Open with Live Server
 ```
+
+Open `http://localhost:3000` in Chrome or Edge.
 
 ### Setting the Parent PIN
 
-The PIN is stored as a SHA-256 hash (never plaintext). To generate a hash:
+The PIN is verified client-side using a SHA-256 hash. The default PIN is `1234`.
 
-```bash
-# On macOS/Linux:
-echo -n "your-pin" | shasum -a 256
+To change it, run this in your browser console:
 
-# On Windows PowerShell:
-$bytes = [System.Text.Encoding]::UTF8.GetBytes("your-pin")
-$hash = [System.Security.Cryptography.SHA256]::Create().ComputeHash($bytes)
-($hash | ForEach-Object { $_.ToString("x2") }) -join ''
+```js
+crypto.subtle.digest('SHA-256', new TextEncoder().encode('YOUR_NEW_PIN'))
+  .then(b => Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2,'0')).join(''))
+  .then(console.log)
 ```
 
-Set the resulting hash as `PARENT_PIN_HASH` in your environment.
+Then replace the `PIN_HASH` value in `settings.html`.
+
+### OneDrive Setup
+
+The app uses MSAL.js to upload stories to OneDrive. To use your own App Registration:
+
+1. Go to [Azure Portal → App Registrations](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade)
+2. Create a new registration with **Single-page application** redirect URI pointing to your GitHub Pages URL
+3. Enable **Personal Microsoft accounts** under supported account types
+4. Copy the **Application (client) ID** and replace it in `settings.html`
 
 ## Offline vs Online Mode
 
@@ -112,7 +112,7 @@ Set the resulting hash as `PARENT_PIN_HASH` in your environment.
 - **Frontend**: Vanilla HTML/CSS/JS (no framework — fast & simple)
 - **Speech-to-Text**: Web Speech API (browser-native, free)
 - **Text-to-Speech**: Web Speech Synthesis API (browser-native, free)
-- **Backend**: Vercel serverless functions (PIN verification only)
+- **Hosting**: GitHub Pages (free, static)
 - **Storage**: IndexedDB (local), OneDrive (cloud backup)
 - **Auth**: MSAL.js for Microsoft Graph API
 

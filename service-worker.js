@@ -5,26 +5,26 @@
  * Includes proper cache versioning so updates propagate to users.
  */
 
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 const CACHE_NAME = `digital-diary-${CACHE_VERSION}`;
 
 // Static assets to pre-cache on install
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/review.html',
-  '/history.html',
-  '/kids.html',
-  '/settings.html',
-  '/styles/style.css',
-  '/scripts/app.js',
-  '/scripts/recorder.js',
-  '/scripts/tts.js',
-  '/scripts/storage.js',
-  '/scripts/speech-recognition.js',
-  '/manifest.json',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
+  './',
+  './index.html',
+  './review.html',
+  './history.html',
+  './kids.html',
+  './settings.html',
+  './styles/style.css',
+  './scripts/app.js',
+  './scripts/recorder.js',
+  './scripts/tts.js',
+  './scripts/storage.js',
+  './scripts/speech-recognition.js',
+  './manifest.json',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
 ];
 
 // Install: pre-cache static assets
@@ -60,19 +60,6 @@ self.addEventListener('fetch', (event) => {
 
   // Skip non-GET requests
   if (request.method !== 'GET') return;
-
-  // API calls: network-first (don't cache API responses)
-  if (url.pathname.startsWith('/api/')) {
-    event.respondWith(
-      fetch(request).catch(() => {
-        return new Response(
-          JSON.stringify({ error: 'You are offline. This feature requires internet.' }),
-          { status: 503, headers: { 'Content-Type': 'application/json' } }
-        );
-      })
-    );
-    return;
-  }
 
   // Static assets: cache-first, fallback to network
   event.respondWith(

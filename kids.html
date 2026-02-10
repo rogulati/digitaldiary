@@ -4,19 +4,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#ff5252">
-  <link rel="manifest" href="/manifest.json">
-  <link rel="icon" href="/icons/icon-192.png">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./icons/icon-192.png">
   <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;600;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles/style.css">
+  <link rel="stylesheet" href="./styles/style.css">
   <title>Select Kid</title>
 </head>
 <body>
   <header>
     <nav aria-label="Main navigation">
-      <a href="/" class="nav-link" aria-label="Record">🎙️</a>
-      <a href="/history.html" class="nav-link" aria-label="History">📚</a>
-      <a href="/kids.html" class="nav-link active" aria-label="Kids">👧</a>
-      <a href="/settings.html" class="nav-link" aria-label="Settings">⚙️</a>
+      <a href="./index.html" class="nav-link" aria-label="Record">🎙️</a>
+      <a href="./history.html" class="nav-link" aria-label="History">📚</a>
+      <a href="./kids.html" class="nav-link active" aria-label="Kids">👧</a>
+      <a href="./settings.html" class="nav-link" aria-label="Settings">⚙️</a>
     </nav>
     <div id="offlineBanner" class="offline-banner hidden" role="alert">
       📴 You're offline
@@ -50,8 +50,8 @@
   </main>
 
   <script type="module">
-    import { showToast, updateOnlineStatus } from '/scripts/app.js';
-    import { getKids, addKid, deleteKid } from '/scripts/storage.js';
+    import { showToast, updateOnlineStatus } from './scripts/app.js';
+    import { getKids, addKid, deleteKid } from './scripts/storage.js';
 
     const kidListEl = document.getElementById('kidList');
     let selectedEmoji = '⭐';
