@@ -68,6 +68,7 @@ export function startRecognition({ lang = 'en-US', onUpdate, onEnd } = {}) {
     // SpeechRecognition may auto-stop (e.g., silence timeout).
     // If we haven't explicitly stopped, restart it to keep listening.
     if (recognition && recognition._keepAlive) {
+      resultIndex = 0; // Reset — new session starts results from 0
       recognition.start();
     } else if (onEnd) {
       onEnd(fullTranscript);
